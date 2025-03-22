@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOLVED Data Visualizer</title>
+
+  <!-- Add Bootstrap CSS for easy theme switching -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Add DataTables CSS for styling the table -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Add jQuery (required by DataTables.js) -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <!-- Add DataTables.js library -->
+  <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+
+  <script src="https://cdn.datatables.net/2.2.2/js/dataTables.js"></script>
+  <script src="https://cdn.datatables.net/fixedcolumns/5.0.4/js/dataTables.fixedColumns.js"></script>
+  <script src="https://cdn.datatables.net/fixedcolumns/5.0.4/js/fixedColumns.dataTables.js"></script>
+
+  <style>
+    .container {
+      width: 80%;
+      margin: 20px auto;
+    }
+    #graphContainer {
+      display: flex;
+      justify-content: center;
+      height: 300px;
+      margin-top: 20px;
+      position: relative;
+    }
+    #tableContainer {
+      max-height: 360px;
+      overflow-y: scroll;
+      margin-top: 20px;
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 8px;
+      border: 1px solid #ddd;
+      text-align: center;
+    }
+    th {
+      background-color: #f2f2f2;
+      cursor: pointer;
+    }
+    .highlight {
+      background-color: #ffcc00;
+    }
+    .column-checkbox {
+      margin-right: 10px;
+    }
+    #checkboxContainer {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>SOLVED Data Visualizer</h2>
+  <input type="file" id="csvFile" class="form-control mb-3" />
+  
+  <div id="graphContainer">Click a column to visualize it</div>
+  <div id="tableContainer"></div>
+  
+  <!-- Column selection checkboxes below the table -->
+  <div id="checkboxContainer" class="mb-3"></div>
+</div>
+
+<script>
+  let data = [];
+  let columnData = [];
+  let currentGraph = null; // Keeps track of the current graph
+  let selectedColumns = []; // Keeps track of the selected columns
+  let allColumns = []; // To store all column names
+
+  // Function to handle CSV file upload
+  document.getElementById('csvFile').addEventListener('change', handleFileUpload);
+
+  function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (file && file.type === "text/csv") {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const csvData = e.target.result;
+        processCSV(csvData);
+      };
+      reader.readAsText(file);
+    } else {
+      alert('Please upload a valid CSV file.');
+    }
+  }
+
+  // Parse CSV and render the table
+  function processCSV(csvData) {
+    Papa.parse(csvData, {
+      header: true,
+      dynamicTyping: true,
+      complete: function(results) {
+        data = results.data;
+        allColumns = Object.keys(data[0]);
+        selectedColumns = allColumns.slice(0, 5); // Default selection of the first 5 columns
+        renderColumnCheckboxes(allColumns);
+        renderTable(data);
+      }
+    });
+  }
+
+  // Render column checkboxes
+  function renderColumnCheckboxes(columns) {
+    const checkboxContainer = document.getElementById('checkboxContainer');
+    checkboxContainer.innerHTML = ''; // Clear previous checkboxes
+
+    columns.forEach(column => {
+      const checkboxHTML = `
+        <label class="column-checkbox">
+          <input type="checkbox" value="${column}" onchange="toggleColumn('${column}', this)" ${selectedColumns.includes(column) ? 'checked' : ''}>
+          ${column}
+        </label>`;
+      checkboxContainer.innerHTML += checkboxHTML;
+    });
+  }
+
+  // Toggle column visibility based on checkbox
+  function toggleColumn(column, checkbox) {
+    if (checkbox.checked) {
+      selectedColumns.push(column);
+    } else {
+      selectedColumns = selectedColumns.filter(col => col !== column);
+    }
+
+    // Re-render table and graph based on selected columns
+    renderTable(data);
+    if (selectedColumns.length > 0) {
+      showGraph(selectedColumns[selectedColumns.length - 1]); // Display graph for last clicked column
+    }
+  }
+
+  // Render table with data using DataTables
+  function renderTable(data) {
+    const tableContainer = document.getElementById('tableContainer');
+    let tableHTML = '<table id="dataTable" class="display table table-striped"><thead><tr>';
+
+    // Filter columns based on selected checkboxes
+    const columns = selectedColumns;
+
+    // Table headers with sorting functionality
+    columns.forEach(column => {
+      tableHTML += `<th onclick="showGraph('${column}')">${column}</th>`;
+    });
+
+    tableHTML += '</tr></thead><tbody>';
+
+    // Table rows
+    data.forEach(row => {
+      tableHTML += '<tr>';
+      columns.forEach(column => {
+        tableHTML += `<td>${row[column]}</td>`;
+      });
+      tableHTML += '</tr>';
+    });
+
+    tableHTML += '</tbody><tfoot><tr>';
+
+    // Table footer with search functionality
+    columns.forEach((column, index) => {
+      tableHTML += `<th><input type="text" placeholder="Search ${column}" data-index="${index}" /></th>`;
+    });
+
+    tableHTML += '</tr></tfoot></table>';
+    tableContainer.innerHTML = tableHTML;
+
+    // Initialize DataTables after rendering the table
+    const table = $('#dataTable').DataTable({
+      "paging": true,
+      "searching": true,
+      "ordering": true,
+      "order": [[0, 'asc']], // Default order
+      "responsive": true
+      
+
+    });
+
+    // Filter event handler
+    $('#dataTable tfoot input').on('keyup', function () {
+      table.column($(this).data('index')).search(this.value).draw();
+    });
+  }
+
+  // Show graph for the clicked column
+  function showGraph(column) {
+    if (currentGraph) {
+      currentGraph.destroy();
+    }
+
+    columnData = data.map(row => row[column]);
+
+    const isNumeric = columnData.every(value => !isNaN(value));
+
+    // Container for the chart
+    const graphContainer = document.getElementById('graphContainer');
+    graphContainer.innerHTML = ''; // Clear any previous graph
+
+    const title = `Visualization of ${column}`;
+    const layout = {
+      title: title,
+      xaxis: { title: column },
+      yaxis: { title: 'Count' }
+    };
+
+    // Pie chart for categorical data
+    if (!isNumeric) {
+      const counts = {};
+      columnData.forEach(value => {
+        counts[value] = (counts[value] || 0) + 1;
+      });
+      const categories = Object.keys(counts);
+      const frequencies = categories.map(category => counts[category]);
+
+      const ctx = document.createElement('canvas');
+      graphContainer.appendChild(ctx);
+      currentGraph = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: categories,
+          datasets: [{
+            data: frequencies,
+            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#E7E9ED'],
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            tooltip: {
+              callbacks: {
+                label: function(tooltipItem) {
+                  const count = tooltipItem.raw;
+                  const percentage = ((count / frequencies.reduce((sum, val) => sum + val, 0)) * 100).toFixed(2);
+                  return `${count} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    // Bar chart for numerical data
+    else {
+      const bins = getBins(columnData);
+      const binLabels = Object.keys(bins);
+      const binValues = binLabels.map(label => bins[label]);
+
+      const ctx = document.createElement('canvas');
+      graphContainer.appendChild(ctx);
+      currentGraph = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: binLabels,
+          datasets: [{
+            label: column,
+            data: binValues,
+            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#E7E9ED'],
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: column,
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Count',
+              },
+              beginAtZero: true
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            tooltip: {
+              callbacks: {
+                label: function(tooltipItem) {
+                  const count = tooltipItem.raw;
+                  const total = binValues.reduce((sum, val) => sum + val, 0);
+                  const percentage = ((count / total) * 100).toFixed(2);
+                  return `${count} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  }
+
+  // Function to bin numerical data
+  function getBins(data) {
+    const bins = {};
+    const binSize = 20;
+    data.forEach(value => {
+      const binStart = Math.floor(value / binSize) * binSize;
+      const binEnd = binStart + binSize - 1;
+      const binLabel = `${binStart}-${binEnd}`;
+      bins[binLabel] = (bins[binLabel] || 0) + 1;
+    });
+    return bins;
+  }
+</script>
+
+</body>
+</html>
